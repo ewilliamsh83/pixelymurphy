@@ -490,6 +490,7 @@ let mobileYaw = 0;
 let mobilePitch = 0;
 let joystickVector = { x: 0, y: 0 };
 let runningTouch = false;
+const uiPointers = new Set();
 
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
@@ -540,7 +541,10 @@ if (joystick && stick) {
   };
 
   joystick.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     activePointer = e.pointerId;
+    uiPointers.add(activePointer);
     startX = e.clientX;
     startY = e.clientY;
     joystick.setPointerCapture(activePointer);
@@ -555,11 +559,13 @@ if (joystick && stick) {
     if (activePointer !== e.pointerId) return;
     joystick.releasePointerCapture(activePointer);
     activePointer = null;
+    uiPointers.delete(e.pointerId);
     resetStick();
   });
 
   joystick.addEventListener("pointercancel", () => {
     activePointer = null;
+    uiPointers.clear();
     resetStick();
   });
 }
@@ -571,10 +577,18 @@ if (runBtn) {
   };
   runBtn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    uiPointers.add(e.pointerId);
     setRun(true);
   });
-  runBtn.addEventListener("pointerup", () => setRun(false));
-  runBtn.addEventListener("pointercancel", () => setRun(false));
+  runBtn.addEventListener("pointerup", (e) => {
+    uiPointers.delete(e.pointerId);
+    setRun(false);
+  });
+  runBtn.addEventListener("pointercancel", (e) => {
+    uiPointers.delete(e.pointerId);
+    setRun(false);
+  });
 }
 
 let lookPointer = null;
@@ -584,7 +598,7 @@ let lookLastY = 0;
 renderer.domElement.addEventListener("pointerdown", (e) => {
   if (window.matchMedia("(pointer: coarse)").matches) {
     const isRightSide = e.clientX > window.innerWidth * 0.5;
-    if (isRightSide) {
+    if (isRightSide && !uiPointers.has(e.pointerId)) {
       lookPointer = e.pointerId;
       lookLastX = e.clientX;
       lookLastY = e.clientY;
@@ -601,8 +615,8 @@ renderer.domElement.addEventListener("pointermove", (e) => {
     const dy = e.clientY - lookLastY;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
-    mobileYaw -= dx * 0.003;
-    mobilePitch -= dy * 0.003;
+    mobileYaw -= dx * 0.0022;
+    mobilePitch -= dy * 0.0022;
   }
 });
 
