@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prototype 3D - Perros vs Humanos</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="hud">
+      <div class="title">Perros vs Humanos</div>
+      <div class="row">
+        <div>Estado: <span id="state">Oculto</span></div>
+        <div>Salchichas: <span id="sausages">0/0</span></div>
+      </div>
+      <div class="row">
+        <div class="chip">WASD mover</div>
+        <div class="chip">Mouse mirar</div>
+        <div class="chip">Shift correr</div>
+        <div class="chip">Click para bloquear puntero</div>
+      </div>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <div class="card">
+        <div class="card-title" id="overlay-title">Ganas</div>
+        <div class="card-body" id="overlay-body">Sobreviviste al tiempo.</div>
+        <button id="restart" class="btn">Reiniciar</button>
+      </div>
+    </div>
+
+    <div class="touch-ui">
+      <div class="joystick" id="joystick">
+        <div class="stick" id="stick"></div>
+      </div>
+      <button id="run-btn" class="run-btn">Correr</button>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
