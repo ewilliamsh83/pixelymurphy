@@ -487,6 +487,7 @@ let pointerLocked = false;
 let yaw = 0;
 let pitch = 0;
 let mobileYaw = 0;
+let mobilePitch = 0;
 let joystickVector = { x: 0, y: 0 };
 let runningTouch = false;
 
@@ -576,12 +577,44 @@ if (runBtn) {
   runBtn.addEventListener("pointercancel", () => setRun(false));
 }
 
-window.addEventListener("touchmove", (e) => {
-  if (e.touches.length >= 2) {
-    const t = e.touches[1];
-    const dx = t.clientX - window.innerWidth / 2;
-    mobileYaw = -dx * 0.002;
+let lookPointer = null;
+let lookLastX = 0;
+let lookLastY = 0;
+
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  if (window.matchMedia("(pointer: coarse)").matches) {
+    const isRightSide = e.clientX > window.innerWidth * 0.5;
+    if (isRightSide) {
+      lookPointer = e.pointerId;
+      lookLastX = e.clientX;
+      lookLastY = e.clientY;
+      renderer.domElement.setPointerCapture(lookPointer);
+    }
+  } else {
+    renderer.domElement.requestPointerLock();
   }
+});
+
+renderer.domElement.addEventListener("pointermove", (e) => {
+  if (lookPointer !== null && e.pointerId === lookPointer) {
+    const dx = e.clientX - lookLastX;
+    const dy = e.clientY - lookLastY;
+    lookLastX = e.clientX;
+    lookLastY = e.clientY;
+    mobileYaw -= dx * 0.003;
+    mobilePitch -= dy * 0.003;
+  }
+});
+
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (e.pointerId === lookPointer) {
+    renderer.domElement.releasePointerCapture(lookPointer);
+    lookPointer = null;
+  }
+});
+
+renderer.domElement.addEventListener("pointercancel", () => {
+  lookPointer = null;
 });
 
 const updateCamera = () => {
@@ -713,7 +746,7 @@ const updatePlayer = (delta) => {
   if (keys.has("KeyA") || keys.has("ArrowLeft")) direction.x -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) direction.x += 1;
 
-  if (Math.abs(joystickVector.x) > 0.05 || Math.abs(joystickVector.y) > 0.05) {
+  if (Math.abs(joystickVector.x) > 0.08 || Math.abs(joystickVector.y) > 0.08) {
     direction.x += joystickVector.x;
     direction.z += joystickVector.y;
   }
@@ -723,7 +756,10 @@ const updatePlayer = (delta) => {
   }
 
   yaw += mobileYaw;
-  mobileYaw *= 0.9;
+  pitch += mobilePitch;
+  pitch = Math.max(-1.1, Math.min(1.1, pitch));
+  mobileYaw *= 0.85;
+  mobilePitch *= 0.85;
 
   const angle = yaw;
   const sin = Math.sin(angle);
