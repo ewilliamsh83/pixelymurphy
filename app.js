@@ -16,6 +16,9 @@ let gameRunning = true;
 let currentLevel = 1;
 let levelPhase = "play";
 let collectibles = [];
+let rewardStart = 0;
+let sausageBundle = null;
+let celebration = null;
 
 const setOverlay = (title, body) => {
   overlayTitle.textContent = title;
@@ -783,6 +786,7 @@ const updateCollectiblesUI = () => {
 };
 
 const checkCaught = () => {
+  if (levelPhase !== "play") return;
   const d1 = player.position.distanceTo(golden.position);
   const d2 = player.position.distanceTo(bulldog.position);
   const d3 = player.position.distanceTo(ghostDog.position);
@@ -802,8 +806,15 @@ const checkCollectibles = () => {
       collected += 1;
       updateCollectiblesUI();
       if (collected >= collectibles.length) {
-        levelPhase = "reward";
-        stateEl.textContent = "Premio";
+        if (currentLevel === 1) {
+          levelPhase = "reward";
+          rewardStart = performance.now();
+          stateEl.textContent = "Premio";
+        } else {
+          levelPhase = "transition";
+          gameRunning = false;
+          setOverlay("Ganas", "Encontraste todos los juguetes. ¡Nivel completado!");
+        }
       }
     }
   });
@@ -896,11 +907,52 @@ const setNightMode = () => {
   flashlight.visible = true;
 };
 
+const createSausageBundle = () => {
+  const bundle = new THREE.Group();
+  for (let i = 0; i < 6; i += 1) {
+    const s = createSausage(0, 0);
+    s.position.set(Math.random() * 0.6 - 0.3, 0.15 + i * 0.1, Math.random() * 0.6 - 0.3);
+    bundle.add(s);
+  }
+  scene.add(bundle);
+  return bundle;
+};
+
+const createCelebration = () => {
+  const group = new THREE.Group();
+  const colors = [0xffe066, 0xff6b6b, 0x6be6c3, 0x74c0fc, 0xf06595];
+  for (let i = 0; i < 50; i += 1) {
+    const mat = new THREE.MeshStandardMaterial({ color: colors[i % colors.length] });
+    const particle = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), mat);
+    particle.position.set(
+      (Math.random() - 0.5) * 2,
+      Math.random() * 1.5 + 0.5,
+      (Math.random() - 0.5) * 2
+    );
+    particle.userData.velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 1.5,
+      Math.random() * 2 + 1,
+      (Math.random() - 0.5) * 1.5
+    );
+    group.add(particle);
+  }
+  scene.add(group);
+  return group;
+};
+
 const setupLevel = (level) => {
   currentLevel = level;
   collected = 0;
   collectibles.forEach((c) => scene.remove(c));
   collectibles = [];
+  if (sausageBundle) {
+    scene.remove(sausageBundle);
+    sausageBundle = null;
+  }
+  if (celebration) {
+    scene.remove(celebration);
+    celebration = null;
+  }
 
   if (level === 1) {
     collectibles = sausagePositions.map(([x, z]) => createSausage(x, z));
@@ -921,7 +973,7 @@ createStars();
 setupLevel(1);
 
 const updatePlayer = (delta) => {
-  if (!gameRunning) return;
+  if (!gameRunning || levelPhase === "reward") return;
   direction.set(0, 0, 0);
   const speed = keys.has("ShiftLeft") || runningTouch ? 7 : 4;
 
@@ -968,9 +1020,24 @@ const animate = () => {
   checkCaught();
   checkCollectibles();
   if (levelPhase === "reward") {
-    const gDist = player.position.distanceTo(golden.position);
-    const bDist = player.position.distanceTo(bulldog.position);
-    if (gDist < 2 && bDist < 2) {
+    if (!sausageBundle) {
+      sausageBundle = createSausageBundle();
+      sausageBundle.position.copy(player.position).add(new THREE.Vector3(0, 1.2, 0));
+      celebration = createCelebration();
+      celebration.position.copy(player.position).add(new THREE.Vector3(0, 1, 0));
+    }
+
+    const target = golden.position.clone().add(bulldog.position).multiplyScalar(0.5);
+    sausageBundle.position.lerp(target.clone().add(new THREE.Vector3(0, 1.2, 0)), 0.05);
+
+    if (celebration) {
+      celebration.children.forEach((p) => {
+        p.userData.velocity.y -= 0.03;
+        p.position.add(p.userData.velocity.clone().multiplyScalar(delta));
+      });
+    }
+
+    if (performance.now() - rewardStart > 2000) {
       levelPhase = "transition";
       gameRunning = false;
       setOverlay("Nivel completado", "Los perros recibieron las salchichas. Pasas al nivel 2.");
