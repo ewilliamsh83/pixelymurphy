@@ -2,6 +2,8 @@ import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 
 const stateEl = document.getElementById("state");
 const sausagesEl = document.getElementById("sausages");
+const levelEl = document.getElementById("level");
+const objectiveEl = document.getElementById("objective");
 const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlay-title");
 const overlayBody = document.getElementById("overlay-body");
@@ -11,6 +13,9 @@ const stick = document.getElementById("stick");
 const runBtn = document.getElementById("run-btn");
 
 let gameRunning = true;
+let currentLevel = 1;
+let levelPhase = "play";
+let collectibles = [];
 
 const setOverlay = (title, body) => {
   overlayTitle.textContent = title;
@@ -51,6 +56,12 @@ const sun = new THREE.Mesh(
 );
 sun.position.set(10, 12, -10);
 scene.add(sun);
+
+const flashlight = new THREE.SpotLight(0xffffff, 1.6, 28, Math.PI / 6, 0.35, 1.2);
+flashlight.visible = false;
+flashlight.position.set(0, 4, 0);
+scene.add(flashlight);
+scene.add(flashlight.target);
 
 const groundGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 12, 12);
 const groundMat = new THREE.MeshStandardMaterial({ color: 0x3f7f3b, roughness: 0.9 });
@@ -638,6 +649,10 @@ const updateCamera = () => {
   const offsetZ = Math.cos(yaw) * distance;
   camera.position.set(player.position.x + offsetX, height + pitch, player.position.z + offsetZ);
   camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
+
+  flashlight.position.set(player.position.x, player.position.y + 2.2, player.position.z);
+  const lookDir = new THREE.Vector3(Math.sin(yaw), -0.05, Math.cos(yaw));
+  flashlight.target.position.copy(player.position.clone().add(lookDir.multiplyScalar(6)));
 };
 
 const clampPosition = () => {
@@ -664,23 +679,60 @@ const createSausage = (x, z) => {
   return sausage;
 };
 
-const sausages = [
-  createSausage(-20, -8),
-  createSausage(10, -26),
-  createSausage(24, 16),
-  createSausage(-30, 18),
-  createSausage(4, 26),
-  createSausage(-8, 30),
-  createSausage(18, -34),
-  createSausage(-34, -14),
-  createSausage(30, 30),
-  createSausage(-2, 14),
-];
-let collected = 0;
-const updateSausagesUI = () => {
-  sausagesEl.textContent = `${collected}/${sausages.length}`;
+const createToy = (x, z) => {
+  const toy = new THREE.Group();
+  const base = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 14, 14),
+    new THREE.MeshStandardMaterial({ color: 0xff6b6b, roughness: 0.5 })
+  );
+  base.position.y = 0.35;
+  toy.add(base);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.35, 0.08, 10, 18),
+    new THREE.MeshStandardMaterial({ color: 0x4ec5ff, roughness: 0.4 })
+  );
+  ring.position.y = 0.35;
+  ring.rotation.x = Math.PI / 2;
+  toy.add(ring);
+
+  toy.position.set(x, 0, z);
+  scene.add(toy);
+  return toy;
 };
-updateSausagesUI();
+
+const sausagePositions = [
+  [-20, -8],
+  [10, -26],
+  [24, 16],
+  [-30, 18],
+  [4, 26],
+  [-8, 30],
+  [18, -34],
+  [-34, -14],
+  [30, 30],
+  [-2, 14],
+];
+
+const toyPositions = [
+  [-26, 6],
+  [14, -28],
+  [26, 22],
+  [-18, 26],
+  [6, 30],
+  [-10, -30],
+  [20, -10],
+  [-30, -22],
+  [32, 10],
+  [0, 18],
+];
+
+let collected = 0;
+const updateCollectiblesUI = () => {
+  sausagesEl.textContent = `${collected}/${collectibles.length}`;
+  levelEl.textContent = `${currentLevel}`;
+  objectiveEl.textContent = currentLevel === 1 ? "Salchichas" : "Juguetes";
+};
 
 const checkCaught = () => {
   const d1 = player.position.distanceTo(golden.position);
@@ -693,18 +745,17 @@ const checkCaught = () => {
   }
 };
 
-const checkSausages = () => {
+const checkCollectibles = () => {
   if (!gameRunning) return;
-  sausages.forEach((s) => {
+  collectibles.forEach((s) => {
     if (!s.visible) return;
     if (player.position.distanceTo(s.position) < 1.3) {
       s.visible = false;
       collected += 1;
-      updateSausagesUI();
-      if (collected >= sausages.length) {
-        gameRunning = false;
-        stateEl.textContent = "Salvado";
-        setOverlay("Ganas", "Encontraste todas las salchichas.");
+      updateCollectiblesUI();
+      if (collected >= collectibles.length) {
+        levelPhase = "reward";
+        stateEl.textContent = "Premio";
       }
     }
   });
@@ -713,14 +764,24 @@ const checkSausages = () => {
 const updateDogs = (delta) => {
   const chaseSpeed = 1.5;
   const ghostSpeed = 2.2;
-  [golden, bulldog].forEach((dog) => {
-    const toPlayer = player.position.clone().sub(dog.position);
-    const distance = toPlayer.length();
-    if (distance < 18) {
-      toPlayer.normalize();
-      dog.position.add(toPlayer.multiplyScalar(chaseSpeed * delta));
-    }
-  });
+  if (levelPhase === "reward") {
+    [golden, bulldog].forEach((dog) => {
+      const toPlayer = player.position.clone().sub(dog.position);
+      if (toPlayer.length() > 1.8) {
+        toPlayer.normalize();
+        dog.position.add(toPlayer.multiplyScalar(chaseSpeed * delta));
+      }
+    });
+  } else {
+    [golden, bulldog].forEach((dog) => {
+      const toPlayer = player.position.clone().sub(dog.position);
+      const distance = toPlayer.length();
+      if (distance < 18) {
+        toPlayer.normalize();
+        dog.position.add(toPlayer.multiplyScalar(chaseSpeed * delta));
+      }
+    });
+  }
 
   const ghostToPlayer = player.position.clone().sub(ghostDog.position);
   const ghostDistance = ghostToPlayer.length();
@@ -732,6 +793,7 @@ const updateDogs = (delta) => {
 
 let dayTime = 0;
 const updateDayNight = (delta) => {
+  if (currentLevel !== 1) return;
   dayTime = (dayTime + delta * 0.03) % 1;
   const angle = dayTime * Math.PI * 2;
   const radius = 30;
@@ -749,6 +811,66 @@ const updateDayNight = (delta) => {
   hemi.intensity = 0.55 + t * 0.35;
   dir.intensity = 0.4 + t * 0.8;
 };
+
+const stars = new THREE.Group();
+const createStars = () => {
+  stars.clear();
+  const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  for (let i = 0; i < 120; i += 1) {
+    const star = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), starMat);
+    star.position.set(
+      THREE.MathUtils.randFloatSpread(140),
+      THREE.MathUtils.randFloat(18, 60),
+      THREE.MathUtils.randFloatSpread(140)
+    );
+    stars.add(star);
+  }
+  scene.add(stars);
+};
+
+const setDayMode = () => {
+  scene.background = new THREE.Color(0x7cc7ff);
+  scene.fog.color = new THREE.Color(0x7cc7ff);
+  hemi.intensity = 0.75;
+  dir.intensity = 1.0;
+  sun.visible = true;
+  stars.visible = false;
+  flashlight.visible = false;
+};
+
+const setNightMode = () => {
+  scene.background = new THREE.Color(0x08111f);
+  scene.fog.color = new THREE.Color(0x08111f);
+  hemi.intensity = 0.25;
+  dir.intensity = 0.2;
+  sun.visible = false;
+  stars.visible = true;
+  flashlight.visible = true;
+};
+
+const setupLevel = (level) => {
+  currentLevel = level;
+  collected = 0;
+  collectibles.forEach((c) => scene.remove(c));
+  collectibles = [];
+
+  if (level === 1) {
+    collectibles = sausagePositions.map(([x, z]) => createSausage(x, z));
+    setDayMode();
+  } else {
+    collectibles = toyPositions.map(([x, z]) => createToy(x, z));
+    setNightMode();
+  }
+
+  collectibles.forEach((c) => (c.visible = true));
+  updateCollectiblesUI();
+  levelPhase = "play";
+  gameRunning = true;
+  stateEl.textContent = "Oculto";
+};
+
+createStars();
+setupLevel(1);
 
 const updatePlayer = (delta) => {
   if (!gameRunning) return;
@@ -796,7 +918,20 @@ const animate = () => {
   updateDayNight(delta);
   updateCamera();
   checkCaught();
-  checkSausages();
+  checkCollectibles();
+  if (levelPhase === "reward") {
+    const gDist = player.position.distanceTo(golden.position);
+    const bDist = player.position.distanceTo(bulldog.position);
+    if (gDist < 2 && bDist < 2) {
+      levelPhase = "transition";
+      gameRunning = false;
+      setOverlay("Nivel completado", "Los perros recibieron las salchichas. Pasas al nivel 2.");
+      setTimeout(() => {
+        hideOverlay();
+        setupLevel(2);
+      }, 1200);
+    }
+  }
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 };
@@ -806,8 +941,8 @@ restartBtn.addEventListener("click", () => {
   gameRunning = true;
   stateEl.textContent = "Oculto";
   collected = 0;
-  sausages.forEach((s) => (s.visible = true));
-  updateSausagesUI();
+  collectibles.forEach((s) => (s.visible = true));
+  updateCollectiblesUI();
   player.position.set(0, 0, 0);
   golden.position.set(-6, 0, -6);
   bulldog.position.set(8, 0, 6);
