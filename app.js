@@ -11,19 +11,11 @@ const restartBtn = document.getElementById("restart");
 const runBtn = document.getElementById("run-btn");
 const moveZone = document.getElementById("move-zone");
 const lookZone = document.getElementById("look-zone");
-const nameModal = document.getElementById("name-modal");
-const nameInput = document.getElementById("name-input");
-const joinBtn = document.getElementById("join-btn");
-const nameError = document.getElementById("name-error");
 
 let gameRunning = true;
 let currentLevel = 1;
 let levelPhase = "play";
 let collectibles = [];
-let socket = null;
-let localId = null;
-let localName = "";
-const remotePlayers = new Map();
 
 const setOverlay = (title, body) => {
   overlayTitle.textContent = title;
@@ -321,27 +313,6 @@ const createFaceTexture = () => {
   return texture;
 };
 
-const createNameLabel = (text) => {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.font = "bold 28px sans-serif";
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(2.6, 0.65, 1);
-  return sprite;
-};
-
 const createCharacter = (color) => {
   const group = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.05 });
@@ -434,10 +405,6 @@ const createCharacter = (color) => {
 const player = createCharacter(0x6ae6c3);
 player.position.set(0, 0, 0);
 scene.add(player);
-
-let playerLabel = createNameLabel("Jugador");
-playerLabel.position.set(0, 3, 0);
-player.add(playerLabel);
 
 const createDog = (color, options = {}) => {
   const dog = new THREE.Group();
@@ -717,30 +684,6 @@ const updateCamera = () => {
   flashlight.target.position.copy(player.position.clone().add(lookDir.multiplyScalar(6)));
 };
 
-const setPlayerName = (name) => {
-  localName = name;
-  if (playerLabel) player.remove(playerLabel);
-  playerLabel = createNameLabel(name);
-  playerLabel.position.set(0, 3, 0);
-  player.add(playerLabel);
-};
-
-const createRemotePlayer = (id, name) => {
-  const avatar = createCharacter(0x9ad0ff);
-  const label = createNameLabel(name);
-  label.position.set(0, 3, 0);
-  avatar.add(label);
-  scene.add(avatar);
-  remotePlayers.set(id, { avatar, label });
-  return avatar;
-};
-
-const removeRemotePlayer = (id) => {
-  const entry = remotePlayers.get(id);
-  if (!entry) return;
-  scene.remove(entry.avatar);
-  remotePlayers.delete(id);
-};
 
 const clampPosition = () => {
   const limit = WORLD_SIZE / 2 - 4;
@@ -1036,58 +979,6 @@ restartBtn.addEventListener("click", () => {
   ghostDog.position.set(-12, 0, 12);
 });
 
-const connectMultiplayer = () => {
-  socket = window.io();
-  socket.emit("join", { name: localName }, (res) => {
-    if (!res?.ok) {
-      const reason = res?.reason === "full" ? "Sala llena (max 3)." : "Nombre requerido.";
-      nameError.textContent = reason;
-      return;
-    }
-    localId = res.id;
-    nameModal.style.display = "none";
-  });
-
-  socket.on("players", (list) => {
-    const incoming = new Set(list.map((p) => p.id));
-    list.forEach((p) => {
-      if (p.id === localId) return;
-      let entry = remotePlayers.get(p.id);
-      if (!entry) {
-        createRemotePlayer(p.id, p.name);
-        entry = remotePlayers.get(p.id);
-      }
-      entry.avatar.position.set(p.x, p.y, p.z);
-      entry.avatar.rotation.y = p.yaw;
-    });
-    Array.from(remotePlayers.keys()).forEach((id) => {
-      if (!incoming.has(id)) removeRemotePlayer(id);
-    });
-  });
-};
-
-const sendState = () => {
-  if (!socket || !localId) return;
-  socket.emit("state", {
-    x: player.position.x,
-    y: player.position.y,
-    z: player.position.z,
-    yaw,
-  });
-};
-
-setInterval(sendState, 100);
-
-joinBtn.addEventListener("click", () => {
-  const name = String(nameInput.value || "").trim().slice(0, 16);
-  if (!name) {
-    nameError.textContent = "Escribe un nombre.";
-    return;
-  }
-  nameError.textContent = "";
-  setPlayerName(name);
-  connectMultiplayer();
-});
 
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
