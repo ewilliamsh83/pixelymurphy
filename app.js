@@ -8,14 +8,20 @@ const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlay-title");
 const overlayBody = document.getElementById("overlay-body");
 const restartBtn = document.getElementById("restart");
-const joystick = document.getElementById("joystick");
-const stick = document.getElementById("stick");
 const runBtn = document.getElementById("run-btn");
+const nameModal = document.getElementById("name-modal");
+const nameInput = document.getElementById("name-input");
+const joinBtn = document.getElementById("join-btn");
+const nameError = document.getElementById("name-error");
 
 let gameRunning = true;
 let currentLevel = 1;
 let levelPhase = "play";
 let collectibles = [];
+let socket = null;
+let localId = null;
+let localName = "";
+const remotePlayers = new Map();
 
 const setOverlay = (title, body) => {
   overlayTitle.textContent = title;
@@ -274,6 +280,66 @@ const createHouse = (x, z) => {
 
 const house = createHouse(30, -6);
 
+const createFaceTexture = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#f2c6a0";
+  ctx.beginPath();
+  ctx.arc(128, 128, 120, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#1c1c1c";
+  ctx.beginPath();
+  ctx.arc(88, 110, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(168, 110, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(84, 106, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(164, 106, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#b77961";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(128, 150, 28, 0, Math.PI);
+  ctx.stroke();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+};
+
+const createNameLabel = (text) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = "bold 28px sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(2.6, 0.65, 1);
+  return sprite;
+};
+
 const createCharacter = (color) => {
   const group = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.05 });
@@ -291,6 +357,12 @@ const createCharacter = (color) => {
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 24), skin);
   head.position.y = 2.15;
   group.add(head);
+
+  const faceTex = createFaceTexture();
+  const faceMat = new THREE.MeshBasicMaterial({ map: faceTex, transparent: true });
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), faceMat);
+  face.position.set(0, 2.15, 0.46);
+  group.add(face);
 
   const hair = new THREE.Mesh(new THREE.SphereGeometry(0.48, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2), accent);
   hair.position.y = 2.25;
@@ -360,6 +432,10 @@ const createCharacter = (color) => {
 const player = createCharacter(0x6ae6c3);
 player.position.set(0, 0, 0);
 scene.add(player);
+
+let playerLabel = createNameLabel("Jugador");
+playerLabel.position.set(0, 3, 0);
+player.add(playerLabel);
 
 const createDog = (color, options = {}) => {
   const dog = new THREE.Group();
@@ -499,7 +575,6 @@ let yaw = 0;
 let pitch = 0;
 let mobileYaw = 0;
 let mobilePitch = 0;
-let joystickVector = { x: 0, y: 0 };
 let runningTouch = false;
 const uiPointers = new Set();
 
@@ -531,55 +606,24 @@ document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
 });
 
-if (joystick && stick) {
-  let activePointer = null;
-  let startX = 0;
-  let startY = 0;
-  const maxRadius = 50;
-
-  const updateStick = (dx, dy) => {
-    const distance = Math.min(Math.hypot(dx, dy), maxRadius);
-    const angle = Math.atan2(dy, dx);
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-    stick.style.transform = `translate(${x}px, ${y}px)`;
-    joystickVector = { x: x / maxRadius, y: y / maxRadius };
-  };
-
-  const resetStick = () => {
-    stick.style.transform = "translate(0px, 0px)";
-    joystickVector = { x: 0, y: 0 };
-  };
-
-  joystick.addEventListener("pointerdown", (e) => {
+const dpadButtons = document.querySelectorAll(".dpad-btn");
+dpadButtons.forEach((btn) => {
+  const key = btn.dataset.key;
+  if (!key) return;
+  btn.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    activePointer = e.pointerId;
-    uiPointers.add(activePointer);
-    startX = e.clientX;
-    startY = e.clientY;
-    joystick.setPointerCapture(activePointer);
+    uiPointers.add(e.pointerId);
+    keys.add(key);
+    btn.setPointerCapture(e.pointerId);
   });
-
-  joystick.addEventListener("pointermove", (e) => {
-    if (activePointer !== e.pointerId) return;
-    updateStick(e.clientX - startX, e.clientY - startY);
-  });
-
-  joystick.addEventListener("pointerup", (e) => {
-    if (activePointer !== e.pointerId) return;
-    joystick.releasePointerCapture(activePointer);
-    activePointer = null;
+  const release = (e) => {
+    keys.delete(key);
     uiPointers.delete(e.pointerId);
-    resetStick();
-  });
-
-  joystick.addEventListener("pointercancel", () => {
-    activePointer = null;
-    uiPointers.clear();
-    resetStick();
-  });
-}
+  };
+  btn.addEventListener("pointerup", release);
+  btn.addEventListener("pointercancel", release);
+});
 
 if (runBtn) {
   const setRun = (on) => {
@@ -653,6 +697,31 @@ const updateCamera = () => {
   flashlight.position.set(player.position.x, player.position.y + 2.2, player.position.z);
   const lookDir = new THREE.Vector3(Math.sin(yaw), -0.05, Math.cos(yaw));
   flashlight.target.position.copy(player.position.clone().add(lookDir.multiplyScalar(6)));
+};
+
+const setPlayerName = (name) => {
+  localName = name;
+  if (playerLabel) player.remove(playerLabel);
+  playerLabel = createNameLabel(name);
+  playerLabel.position.set(0, 3, 0);
+  player.add(playerLabel);
+};
+
+const createRemotePlayer = (id, name) => {
+  const avatar = createCharacter(0x9ad0ff);
+  const label = createNameLabel(name);
+  label.position.set(0, 3, 0);
+  avatar.add(label);
+  scene.add(avatar);
+  remotePlayers.set(id, { avatar, label });
+  return avatar;
+};
+
+const removeRemotePlayer = (id) => {
+  const entry = remotePlayers.get(id);
+  if (!entry) return;
+  scene.remove(entry.avatar);
+  remotePlayers.delete(id);
 };
 
 const clampPosition = () => {
@@ -882,11 +951,6 @@ const updatePlayer = (delta) => {
   if (keys.has("KeyA") || keys.has("ArrowLeft")) direction.x -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) direction.x += 1;
 
-  if (Math.abs(joystickVector.x) > 0.08 || Math.abs(joystickVector.y) > 0.08) {
-    direction.x += joystickVector.x;
-    direction.z += joystickVector.y;
-  }
-
   if (direction.lengthSq() > 0) {
     direction.normalize();
   }
@@ -947,6 +1011,59 @@ restartBtn.addEventListener("click", () => {
   golden.position.set(-6, 0, -6);
   bulldog.position.set(8, 0, 6);
   ghostDog.position.set(-12, 0, 12);
+});
+
+const connectMultiplayer = () => {
+  socket = window.io();
+  socket.emit("join", { name: localName }, (res) => {
+    if (!res?.ok) {
+      const reason = res?.reason === "full" ? "Sala llena (max 3)." : "Nombre requerido.";
+      nameError.textContent = reason;
+      return;
+    }
+    localId = res.id;
+    nameModal.style.display = "none";
+  });
+
+  socket.on("players", (list) => {
+    const incoming = new Set(list.map((p) => p.id));
+    list.forEach((p) => {
+      if (p.id === localId) return;
+      let entry = remotePlayers.get(p.id);
+      if (!entry) {
+        createRemotePlayer(p.id, p.name);
+        entry = remotePlayers.get(p.id);
+      }
+      entry.avatar.position.set(p.x, p.y, p.z);
+      entry.avatar.rotation.y = p.yaw;
+    });
+    Array.from(remotePlayers.keys()).forEach((id) => {
+      if (!incoming.has(id)) removeRemotePlayer(id);
+    });
+  });
+};
+
+const sendState = () => {
+  if (!socket || !localId) return;
+  socket.emit("state", {
+    x: player.position.x,
+    y: player.position.y,
+    z: player.position.z,
+    yaw,
+  });
+};
+
+setInterval(sendState, 100);
+
+joinBtn.addEventListener("click", () => {
+  const name = String(nameInput.value || "").trim().slice(0, 16);
+  if (!name) {
+    nameError.textContent = "Escribe un nombre.";
+    return;
+  }
+  nameError.textContent = "";
+  setPlayerName(name);
+  connectMultiplayer();
 });
 
 window.addEventListener("resize", () => {
