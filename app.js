@@ -9,6 +9,8 @@ const overlayTitle = document.getElementById("overlay-title");
 const overlayBody = document.getElementById("overlay-body");
 const restartBtn = document.getElementById("restart");
 const runBtn = document.getElementById("run-btn");
+const moveZone = document.getElementById("move-zone");
+const lookZone = document.getElementById("look-zone");
 const nameModal = document.getElementById("name-modal");
 const nameInput = document.getElementById("name-input");
 const joinBtn = document.getElementById("join-btn");
@@ -577,6 +579,9 @@ let mobileYaw = 0;
 let mobilePitch = 0;
 let runningTouch = false;
 const uiPointers = new Set();
+let movePointer = null;
+let moveOrigin = { x: 0, y: 0 };
+let moveVector = { x: 0, y: 0 };
 
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
@@ -606,24 +611,36 @@ document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
 });
 
-const dpadButtons = document.querySelectorAll(".dpad-btn");
-dpadButtons.forEach((btn) => {
-  const key = btn.dataset.key;
-  if (!key) return;
-  btn.addEventListener("pointerdown", (e) => {
+if (moveZone) {
+  moveZone.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     e.stopPropagation();
     uiPointers.add(e.pointerId);
-    keys.add(key);
-    btn.setPointerCapture(e.pointerId);
+    movePointer = e.pointerId;
+    moveOrigin = { x: e.clientX, y: e.clientY };
+    moveZone.setPointerCapture(e.pointerId);
   });
-  const release = (e) => {
-    keys.delete(key);
+
+  moveZone.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== movePointer) return;
+    const dx = e.clientX - moveOrigin.x;
+    const dy = e.clientY - moveOrigin.y;
+    const max = 60;
+    const nx = THREE.MathUtils.clamp(dx / max, -1, 1);
+    const ny = THREE.MathUtils.clamp(dy / max, -1, 1);
+    moveVector = { x: nx, y: ny };
+  });
+
+  const endMove = (e) => {
+    if (e.pointerId !== movePointer) return;
+    moveZone.releasePointerCapture(e.pointerId);
     uiPointers.delete(e.pointerId);
+    movePointer = null;
+    moveVector = { x: 0, y: 0 };
   };
-  btn.addEventListener("pointerup", release);
-  btn.addEventListener("pointercancel", release);
-});
+  moveZone.addEventListener("pointerup", endMove);
+  moveZone.addEventListener("pointercancel", endMove);
+}
 
 if (runBtn) {
   const setRun = (on) => {
@@ -650,21 +667,22 @@ let lookPointer = null;
 let lookLastX = 0;
 let lookLastY = 0;
 
-renderer.domElement.addEventListener("pointerdown", (e) => {
+const lookTarget = lookZone || renderer.domElement;
+
+lookTarget.addEventListener("pointerdown", (e) => {
   if (window.matchMedia("(pointer: coarse)").matches) {
-    const isRightSide = e.clientX > window.innerWidth * 0.5;
-    if (isRightSide && !uiPointers.has(e.pointerId)) {
+    if (!uiPointers.has(e.pointerId)) {
       lookPointer = e.pointerId;
       lookLastX = e.clientX;
       lookLastY = e.clientY;
-      renderer.domElement.setPointerCapture(lookPointer);
+      lookTarget.setPointerCapture(lookPointer);
     }
   } else {
     renderer.domElement.requestPointerLock();
   }
 });
 
-renderer.domElement.addEventListener("pointermove", (e) => {
+lookTarget.addEventListener("pointermove", (e) => {
   if (lookPointer !== null && e.pointerId === lookPointer) {
     const dx = e.clientX - lookLastX;
     const dy = e.clientY - lookLastY;
@@ -675,14 +693,14 @@ renderer.domElement.addEventListener("pointermove", (e) => {
   }
 });
 
-renderer.domElement.addEventListener("pointerup", (e) => {
+lookTarget.addEventListener("pointerup", (e) => {
   if (e.pointerId === lookPointer) {
-    renderer.domElement.releasePointerCapture(lookPointer);
+    lookTarget.releasePointerCapture(lookPointer);
     lookPointer = null;
   }
 });
 
-renderer.domElement.addEventListener("pointercancel", () => {
+lookTarget.addEventListener("pointercancel", () => {
   lookPointer = null;
 });
 
@@ -950,6 +968,11 @@ const updatePlayer = (delta) => {
   if (keys.has("KeyS") || keys.has("ArrowDown")) direction.z += 1;
   if (keys.has("KeyA") || keys.has("ArrowLeft")) direction.x -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) direction.x += 1;
+
+  if (Math.abs(moveVector.x) > 0.1 || Math.abs(moveVector.y) > 0.1) {
+    direction.x += moveVector.x;
+    direction.z += moveVector.y;
+  }
 
   if (direction.lengthSq() > 0) {
     direction.normalize();
