@@ -20,7 +20,7 @@ let collectibles = [];
 let rewardStart = 0;
 let sausageBundle = null;
 let celebration = null;
-const GAME_VERSION = "0.12.0";
+const GAME_VERSION = "0.12.1";
 
 const setOverlay = (title, body) => {
   overlayTitle.textContent = title;
@@ -799,8 +799,15 @@ const checkCaught = () => {
   }
 };
 
+const startRewardSequence = () => {
+  if (levelPhase === "reward") return;
+  levelPhase = "reward";
+  rewardStart = performance.now();
+  stateEl.textContent = "Premio";
+};
+
 const checkCollectibles = () => {
-  if (!gameRunning) return;
+  if (!gameRunning || levelPhase !== "play") return;
   collectibles.forEach((s) => {
     if (!s.visible) return;
     if (player.position.distanceTo(s.position) < 1.3) {
@@ -809,9 +816,7 @@ const checkCollectibles = () => {
       updateCollectiblesUI();
       if (collected >= collectibles.length) {
         if (currentLevel === 1) {
-          levelPhase = "reward";
-          rewardStart = performance.now();
-          stateEl.textContent = "Premio";
+          startRewardSequence();
         } else {
           levelPhase = "transition";
           gameRunning = false;
@@ -1023,6 +1028,7 @@ const animate = () => {
   checkCaught();
   checkCollectibles();
   if (levelPhase === "reward") {
+    if (!rewardStart) rewardStart = performance.now();
     if (!sausageBundle) {
       sausageBundle = createSausageBundle();
       sausageBundle.position.copy(player.position).add(new THREE.Vector3(0, 1.2, 0));
