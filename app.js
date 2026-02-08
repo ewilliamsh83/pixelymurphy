@@ -4,6 +4,7 @@ const stateEl = document.getElementById("state");
 const sausagesEl = document.getElementById("sausages");
 const levelEl = document.getElementById("level");
 const objectiveEl = document.getElementById("objective");
+const versionEl = document.getElementById("version");
 const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlay-title");
 const overlayBody = document.getElementById("overlay-body");
@@ -19,6 +20,7 @@ let collectibles = [];
 let rewardStart = 0;
 let sausageBundle = null;
 let celebration = null;
+const GAME_VERSION = "0.12.0";
 
 const setOverlay = (title, body) => {
   overlayTitle.textContent = title;
@@ -971,6 +973,7 @@ const setupLevel = (level) => {
 
 createStars();
 setupLevel(1);
+if (versionEl) versionEl.textContent = GAME_VERSION;
 
 const updatePlayer = (delta) => {
   if (!gameRunning || levelPhase === "reward") return;
