@@ -550,6 +550,24 @@ let movePointer = null;
 let moveOrigin = { x: 0, y: 0 };
 let moveVector = { x: 0, y: 0 };
 
+const safeSetCapture = (el, id) => {
+  if (!el || typeof el.setPointerCapture !== "function") return;
+  try {
+    el.setPointerCapture(id);
+  } catch (err) {
+    // Ignore capture errors on some mobile browsers.
+  }
+};
+
+const safeReleaseCapture = (el, id) => {
+  if (!el || typeof el.releasePointerCapture !== "function") return;
+  try {
+    el.releasePointerCapture(id);
+  } catch (err) {
+    // Ignore capture errors on some mobile browsers.
+  }
+};
+
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 
@@ -585,7 +603,7 @@ if (moveZone) {
     uiPointers.add(e.pointerId);
     movePointer = e.pointerId;
     moveOrigin = { x: e.clientX, y: e.clientY };
-    moveZone.setPointerCapture(e.pointerId);
+    safeSetCapture(moveZone, e.pointerId);
   });
 
   moveZone.addEventListener("pointermove", (e) => {
@@ -600,7 +618,7 @@ if (moveZone) {
 
   const endMove = (e) => {
     if (e.pointerId !== movePointer) return;
-    moveZone.releasePointerCapture(e.pointerId);
+    safeReleaseCapture(moveZone, e.pointerId);
     uiPointers.delete(e.pointerId);
     movePointer = null;
     moveVector = { x: 0, y: 0 };
@@ -642,7 +660,7 @@ lookTarget.addEventListener("pointerdown", (e) => {
       lookPointer = e.pointerId;
       lookLastX = e.clientX;
       lookLastY = e.clientY;
-      lookTarget.setPointerCapture(lookPointer);
+      safeSetCapture(lookTarget, lookPointer);
     }
   } else {
     renderer.domElement.requestPointerLock();
@@ -662,7 +680,7 @@ lookTarget.addEventListener("pointermove", (e) => {
 
 lookTarget.addEventListener("pointerup", (e) => {
   if (e.pointerId === lookPointer) {
-    lookTarget.releasePointerCapture(lookPointer);
+    safeReleaseCapture(lookTarget, lookPointer);
     lookPointer = null;
   }
 });
